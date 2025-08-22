@@ -1,28 +1,26 @@
-# -------- Stage 1: Build WAR file with Maven --------
-FROM maven:3.9.6-eclipse-temurin-17 AS build
+# Use official Tomcat with OpenJDK
+FROM tomcat:10.1-jdk17
+
+# Remove default webapps
+RUN rm -rf /usr/local/tomcat/webapps/*
+
+# Create app directory and copy source
 WORKDIR /app
+COPY . .
 
-# Copy pom.xml trước để cache dependency
-COPY pom.xml .
-RUN mvn dependency:go-offline -B
+# Install Maven, build the WAR, and clean up in single layer
+RUN apt-get update && \
+    apt-get install -y maven && \
+    mvn clean package -DskipTests && \
+    cp target/demo-1.0-SNAPSHOT.war /usr/local/tomcat/webapps/ROOT.war && \
+    apt-get remove -y maven && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    rm -rf /app
 
-# Copy source code và build WAR
-COPY src ./src
-RUN mvn clean package -DskipTests
+# Fix shutdown warnings by disabling shutdown port
+RUN sed -i 's/port="8005"/port="-1"/' /usr/local/tomcat/conf/server.xml
 
-# -------- Stage 2: Deploy WAR to Tomcat --------
-FROM tomcat:9.0-jdk17-temurin
-
-WORKDIR /usr/local/tomcat
-
-# Disable shutdown port (Render hay gửi nhầm request)
-RUN sed -i 's/port="8005"/port="-1"/' conf/server.xml
-
-# Xóa app mặc định và copy WAR từ stage build
-RUN rm -rf webapps/*
-COPY --from=build /app/target/*.war webapps/ROOT.war
-
-# Expose port Tomcat
 EXPOSE 8080
-
 CMD ["catalina.sh", "run"]
